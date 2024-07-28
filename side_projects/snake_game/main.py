@@ -1,8 +1,8 @@
 from turtle import Screen
 import time
-from snake import Snake
-from food import Food
-from scoreboard import Scoreboard
+from side_projects.snake_game.snake import Snake
+from side_projects.snake_game.food import Food
+from side_projects.snake_game.scoreboard import Scoreboard
 
 screen = Screen()
 screen.title("Snake Game")
