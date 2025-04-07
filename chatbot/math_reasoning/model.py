@@ -166,14 +166,14 @@ app = workflow.compile()
 
 
 
-state = CodingState(problem="""
-Create a Python function to check prime numbers.
-Handle edge cases and provide efficient implementation.
-""")
+# state = CodingState(problem="""
+# Create a Python function to check prime numbers.
+# Handle edge cases and provide efficient implementation.
+# """)
 
-result = app.invoke(state)
+# result = app.invoke(state)
 
-print(f"Final Code:\n{result['code']}")
-print(f"Comprehensive Tests:\n{result['final_tests']}")
-print(f"Validation Results: {result['test_results']}")
-print(f"Iterations Used: {result['iteration']}")
+# print(f"Final Code:\n{result['code']}")
+# print(f"Comprehensive Tests:\n{result['final_tests']}")
+# print(f"Validation Results: {result['test_results']}")
+# print(f"Iterations Used: {result['iteration']}")

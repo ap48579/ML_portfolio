@@ -1,6 +1,7 @@
 import streamlit as st
 from streamlit_chat import message
 import time
+from model import app, CodingState
 
 st.set_page_config(page_title="Leetcode assistant", page_icon=":speech_balloon:")
 
@@ -33,8 +34,11 @@ response_container = st.container()
 container = st.container()
 
 # Function to simulate the chatbot's response (replace with actual LLM integration later)
-def generate_response(prompt):
-    return f"This is a simulated response to: {prompt}"
+def generate_response(user_question):
+    state = CodingState(problem=user_question)
+
+    result = app.invoke(state)
+    return f"This is the generated code: {result['code']} \n this is the generated unit test: {result['final_tests']} "
 
 # User input
 with container:
