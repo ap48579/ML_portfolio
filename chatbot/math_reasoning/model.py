@@ -1,5 +1,5 @@
 # This file has agent infrastructure and model related files. 
-
+from typing import Literal
 from typing import Annotated, Optional, Dict, List
 from typing_extensions import TypedDict
 
@@ -8,7 +8,22 @@ from pydantic import BaseModel
 from langgraph.graph.message import add_messages
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import MessagesState, END
+from langgraph.types import Command
 import subprocess
+
+
+members = ["QnA", "python_planning"]
+
+options = members + ["FINISH"]
+
+class Router(TypedDict):
+    """Worker to route to next. If no workers needed, route to FINISH."""
+
+    next: Literal["QnA", "python_planning", "FINISH"]
+
+
+
 
 
 llm = ChatOllama(
@@ -16,8 +31,11 @@ llm = ChatOllama(
     temperature=0.7  
 )
 
-class CodingState(BaseModel):
-    problem: str
+class State(BaseModel):
+    user_q: str
+    goto:Optional[str] = None
+    action: Optional[str] = None
+    qna_response: Optional[str] = None
     plan: Optional[str] = None
     code: Optional[str] = None
     validation_tests: Optional[str] = None
@@ -26,33 +44,74 @@ class CodingState(BaseModel):
     errors: List[str] = []
     iteration: int = 0
 
-def planner_agent(state: CodingState) -> CodingState:
+
+def supervisor_node(state: State) -> State:
+    print("--"*50)
+    print("\n🔧 SUPERVISOR AGENT ACTIVATED")
+    
+    messages = [
+        SystemMessage(content="You are a supervior to decide what is the user interested in between simple chat or coding task."),
+        HumanMessage(content=f"""Given the below user question you have to choose between the following workers : {members} :
+        {state.user_q}
+        respond with the worker to act next. Each worker will perform a
+   task and respond with their results and status. When finished,
+   respond with FINISH.""")
+    ]
+    state.action = llm.with_structured_output(Router).invoke(messages)
+
+    state.goto = state.action["next"]
+    
+    return state
+
+
+def QnA_agent(state: State) -> State:
+    print("--"*50)
+    print("\n🔧 QnA AGENT ACTIVATED")
+    
+    messages = [
+        SystemMessage(content="You are a simple question and answer bot. Be polite and respectful"),
+        HumanMessage(content=f"""Given the below user question, start with greeting the user. Then follow up with answering the user question. Apart from your primary functions you also help the user with python coding tasks and unittest creation.
+        {state.user_q}""")
+    ]
+    state.qna_response = llm.invoke(messages).content
+    
+    print(f"Model response: {state.qna_response}")
+    return state
+
+
+def decide_question_type(state):
+
+    if state.goto == "FINISH":
+        return END
+    else:
+        return state.goto
+
+
+def planner_agent(state: State) -> State:
     print("--"*50)
     print("\n🔧 PLANNER AGENT ACTIVATED")
     
     messages = [
         SystemMessage(content="You are a senior software architect"),
         HumanMessage(content=f"""Create development plan for:
-        {state.problem}
+        {state.user_q}
         Include implementation steps and testing strategy.""")
     ]
     state.plan = llm.invoke(messages).content
 
-    
-    
     print(f"Generated plan:\n{state.plan}...")
     print("--"*50)
     print("--"*50)
     return state
 
 
-def coder_agent(state: CodingState) -> CodingState:
+def coder_agent(state: State) -> State:
     print("--"*50)
     print("\n🔧 CODER AGENT ACTIVATED")
     messages = [
         SystemMessage(content="You are a Python coding expert"),
         HumanMessage(content=f"""Write Python code for:
-        {state.problem}
+        {state.user_q}
         Follow this plan: {state.plan}""")
     ]
     state.code = llm.invoke(messages).content
@@ -62,7 +121,7 @@ def coder_agent(state: CodingState) -> CodingState:
     return state
 
 
-def tester_agent(state: CodingState) -> CodingState:
+def tester_agent(state: State) -> State:
     print("--"*50)
     print("\n🔧 TESTER AGENT ACTIVATED")
     messages = [
@@ -78,7 +137,7 @@ def tester_agent(state: CodingState) -> CodingState:
     print("--"*50)
     return state
 
-def executor_agent(state: CodingState) -> CodingState:
+def executor_agent(state: State) -> State:
     print("--"*50)
     print('Execution agent is activated')
     try:
@@ -94,7 +153,7 @@ def executor_agent(state: CodingState) -> CodingState:
     print("--"*50)
     return state
 
-def debugger_agent(state: CodingState) -> CodingState:
+def debugger_agent(state: State) -> State:
     print("--"*50)
     print('Debugger agent is activated')
     messages = [
@@ -112,7 +171,7 @@ def debugger_agent(state: CodingState) -> CodingState:
     return state
 
 
-def unittest_generator_agent(state: CodingState) -> CodingState:
+def unittest_generator_agent(state: State) -> State:
     print("--"*50)
     print("Finished with code generation and working on unittest creation!!!")
     messages = [
@@ -127,22 +186,31 @@ def unittest_generator_agent(state: CodingState) -> CodingState:
     print("--"*50)
     return state
 
-workflow = StateGraph(CodingState)
+workflow = StateGraph(State)
 
-workflow.add_node("planner", planner_agent)
+workflow.add_node("supervisor", supervisor_node)
+workflow.add_node("QnA", QnA_agent)
+workflow.add_node("python_planning", planner_agent)
 workflow.add_node("coder", coder_agent)
 workflow.add_node("tester", tester_agent)
 workflow.add_node("executor", executor_agent)
 workflow.add_node("debugger", debugger_agent)
 workflow.add_node("unittest_gen", unittest_generator_agent)
 
-workflow.set_entry_point("planner")
-workflow.add_edge("planner", "coder")
+workflow.set_entry_point("supervisor")
+workflow.add_conditional_edges(
+    "supervisor",
+    decide_question_type
+)
+
+workflow.add_edge("QnA", END)
+
+workflow.add_edge("python_planning", "coder")
 workflow.add_edge("coder", "tester")
 workflow.add_edge("tester", "executor")
 
 
-def decide_next(state: CodingState):
+def decide_next(state: State):
     print("--"*50)
     if state.test_results["passed"]:
         print("Passed all tests")
@@ -166,9 +234,8 @@ app = workflow.compile()
 
 
 
-# state = CodingState(problem="""
-# Create a Python function to check prime numbers.
-# Handle edge cases and provide efficient implementation.
+# state = State(user_q="""
+# Hello. What can you do to help me today?
 # """)
 
 # result = app.invoke(state)
