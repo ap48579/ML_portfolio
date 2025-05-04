@@ -1,4 +1,5 @@
 # Agentic AI setup to process images and answer questions. 
+# chatollama is deprecated and hence doesnt support vision models. 
 
 from typing import Literal
 from typing import Annotated, Optional, Dict, List
@@ -11,6 +12,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import MessagesState, END
 from langgraph.types import Command
+import ollama
 import subprocess
 import base64, httpx
 
@@ -76,14 +78,17 @@ def QnA_agent(state: State) -> State:
     print("\n🔧 QnA AGENT ACTIVATED")
 
 
-    messages=[
-            {'role': 'system', 'content': f"""You are a simple question and answer bot. Be polite and respectful"""},
-            {'role': 'user', 'content': f"""Given the below user question, start with greeting the user. Then follow up with answering the user question.
-                     {state.user_q}""",
-    'images': [encode_image(Path("images")/"sample_image.jpeg")]}
-        ]
+    # messages=[
+    #         {'role': 'system', 'content': f"""You are a simple question and answer bot. Be polite and respectful"""},
+    #         {'role': 'user', 'content': f"""Given the below user question, start with greeting the user. Then follow up with answering the user question.
+    #                  {state.user_q}""",
+    # 'images': [encode_image(Path("images")/"sample_image.jpeg")]}
+    #     ]
     
-    state.qna_response = llm2.invoke(messages).content
+    state.qna_response = ollama.chat(
+    model='llama3.2-vision',
+    messages = [{'role': 'system', 'content': f"""You are a simple question and answer bot. Be polite and respectful"""},
+                {'role': 'user', 'content': 'what is this image about?','images': [encode_image(Path("images")/"sample_image.jpeg")]}])['message']['content']
     
     print(f"Model response: {state.qna_response}")
     return state
@@ -93,11 +98,16 @@ def OCR_agent(state: State) -> State:
     print("--"*50)
     print("\n🔧 OCR AGENT ACTIVATED")
     
-    messages=[
-                {'role': 'system', 'content': f"""Extract nutrition facts as JSON. Return only valid JSON."""},
-                {'role': 'user', 'content': f"""Process this food label:""",'images': [encode_image(Path("images")/"sample_image.jpeg")]}
-            ]
-    state.ocr_response = llm2.invoke(messages).content
+    # messages=[
+    #             {'role': 'system', 'content': f"""Extract nutrition facts as JSON. Return only valid JSON."""},
+    #             {'role': 'user', 'content': f"""Process this food label:""",'images': [encode_image(Path("images")/"sample_image.jpeg")]}
+    #         ]
+
+    state.ocr_response =  ollama.chat(
+    model='llama3.2-vision',
+    messages = [{'role': 'system', 'content': f"""Extract nutrition facts as JSON. Return only valid JSON."""},
+                {'role': 'user', 'content': f"""Process this food label:""",'images': [encode_image(Path("images")/"sample_image.jpeg")]}])['message']['content']
+    
     
     print(f"Model response: {state.ocr_response}")
     return state
